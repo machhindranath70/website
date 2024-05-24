@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Assistant Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 0;
+            text-align: center;
+        }
+        .container {
+            padding: 20px;
+            max-width: 900px;
+            margin: auto;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #4CAF50;
+            text-align: center;
+            margin: 10px 0;
+            cursor: pointer;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Farm Assistant Chatbot</h1>
+    </header>
+    <div class="container">
+        <h2>Overview</h2>
+        <p>This project is a Farm Assistant Chatbot designed to help farmers with various queries about farming, such as weather updates, best crops to plant, and improving soil health. The chatbot also integrates with Google Earth Engine to monitor farm health.</p>
+        
+        <h2>Features</h2>
+        <ul>
+            <li>Weather updates</li>
+            <li>Recommendations for best crops to plant</li>
+            <li>Tips on improving soil health</li>
+            <li>Farm health monitoring using Google Earth Engine</li>
+        </ul>
+        
+        <h2>Setup Instructions</h2>
+        <p>To set up this project, follow these steps:</p>
+        <ol>
+            <li>Install the required Python packages:
+                <pre>pip install openai geemap gtts pydub google-auth geocoder</pre>
+            </li>
+            <li>Replace the placeholder in the script with your OpenAI API key and Google Earth Engine credentials.</li>
+            <li>Run the script in your preferred Python environment.</li>
+        </ol>
+        
+        <h2>Usage</h2>
+        <p>After setting up, you can interact with the chatbot by typing your questions or selecting predefined questions. The chatbot will provide relevant answers and play the audio response.</p>
+        
+        <h2>Code</h2>
+        <pre>
+import openai
+import webbrowser
+from gtts import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
+import io
+import ee
+import geemap
+from google.auth.transport.requests import AuthorizedSession
+from google.oauth2 import service_account
+import geocoder
+
+# Initialize OpenAI
+openai.api_key = 'YOUR_API_KEY'
+
+# Define text-to-speech function
+def text_to_audio(text, language='en'):
+    tts = gTTS(text=text, lang=language)
+    audio_data = io.BytesIO()
+    tts.write_to_fp(audio_data)
+    audio_data.seek(0)
+    return audio_data
+
+# Define function to play audio
+def play_audio(audio_data):
+    audio = AudioSegment.from_file(audio_data, format="mp3")
+    play(audio)
+
+# Predefined questions and corresponding actions
+predefined_questions = {
+    "How is the weather today?": "https://www.google.com/search?q=today+weather",
+    "What are the best crops to plant this season?": "https://www.google.com/search?q=best+crops+to+plant+this+season",
+    "How can I improve soil health?": "https://www.google.com/search?q=how+to+improve+soil+health",
+    "How is the health of my farm?": "farm_health"
+}
+
+# Function to handle predefined questions
+def handle_predefined_question(question):
+    if question in predefined_questions:
+        action = predefined_questions[question]
+        if action.startswith("http"):
+            print(f"Opening {action} in your browser...")
+            webbrowser.open(action)
+        elif action == "farm_health":
+            run_farm_health_code()
+        return True
+    return False
+
+# Function to run the farm health code
+def run_farm_health_code():
+    print("Initializing Google Earth Engine and creating a map...")
+    # Authorization Variables
+    PROJECT = "idmt-321615"
+    SERVICE_ACCOUNT = "google-earth-engine-e88c2dbec6@idmt-321615.iam.gserviceaccount.com"
+
+    # Secret Key
+    KEY = "/content/drive/MyDrive/GEE key/gee_private_key.json"  # Update this path
+
+    # Authorization Logic
+    credentials = service_account.Credentials.from_service_account_file(KEY)
+    scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
+    session = AuthorizedSession(scoped_credentials)
+    ee_creds = ee.ServiceAccountCredentials(SERVICE_ACCOUNT, KEY)
+    ee.Initialize(ee_creds)
+    Map = geemap.Map()
+
+    # Create a map
+    Map.add_basemap('HYBRID')
+
+    # Example: Adding a layer to the map (e.g., NDVI)
+    collection = ee.ImageCollection('COPERNICUS/S2').filterDate('2023-01-01', '2023-12-31')
+    ndvi = collection.median().normalizedDifference(['B8', 'B4'])
+    ndvi_params = {'min': -1, 'max': 1, 'palette': ['red', 'yellow', 'green']}
+    Map.addLayer(ndvi, ndvi_params, 'NDVI')
+
+    # Display the map
+    Map.addLayerControl()
+    display(Map)  # Display the map in Jupyter Notebook
+
+# Main chat loop
+def main():
+    messages = [{"role": "system", "content": "You are ChatGPT, an assistant for farmers."}]
+
+    while True:
+        print("\nYou can type your question or select a predefined question:")
+        for i, question in enumerate(predefined_questions.keys(), 1):
+            print(f"{i}. {question}")
+
+        user_input = input("User: ").strip()
+
+        if user_input.isdigit() and 1 <= int(user_input) <= len(predefined_questions):
+            user_input = list(predefined_questions.keys())[int(user_input) - 1]
+
+        if not user_input:
+            continue
+
+        # Check if the input is a predefined question and handle it
+        if handle_predefined_question(user_input):
+            continue
+
+        messages.append({"role": "user", "content": user_input})
+
+        try:
+            chat = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
+            reply = chat.choices[0].message.content
+            print(f"ChatGPT: {reply}")
+
+            audio_data = text_to_audio(reply, 'en')
+            play_audio(audio_data)
+
+            messages.append({"role": "assistant", "content": reply})
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
+        </pre>
+        
+        <h2>Author</h2>
+        <p>Created by [Your Name]. For more information, visit <a href="https://github.com/your-github-profile">my GitHub profile</a>.</p>
+    </div>
+</body>
+</html>
